@@ -35,7 +35,7 @@ def load_mesh():
     if not os.path.exists(msh_filename):
         print("-" * 50)
         print(f"\n错误: 未找到网格文件 '{msh_filename}'。")
-        print("\n请先运行 'generate_mesh.py' 脚本来自动生成网格,")
+        print("\n请先运行 'generate_mesh.py' 脚本来生成网格,")
         print("然后再重新运行此脚本。")
         print("-" * 50)
         exit()
@@ -194,124 +194,74 @@ def calculate_performance_parameters(mesh, p, T, Vf, rho, U, k_fluid, T_inlet, T
     """计算性能参数（摩擦系数和努塞尔数）"""
     print("\n开始进行后处理: 计算 Darcy 摩擦系数 (f) 和 Nusselt 数 (Nu)...")
 
-    # 共享变量和几何参数
-    faceAreas = mesh._faceAreas  # (带下划线)
-    faceNormals = mesh.faceNormals  # (不带下划线)
+    # 计算几何参数
+    x_coords = mesh.cellCenters[0]  # x 坐标数组
+    y_coords = mesh.cellCenters[1]  # y 坐标数组
 
-    # 获取边界掩码
-    inletFaceMask = inletFace.value
-    outletFaceMask = outletFace.value
-    airfoil_mask = airfoilsFace.value
+    # 修复numerix函数调用
+    L_channel = numerix.amax(x_coords.value) - numerix.amin(x_coords.value)  # 通道长度
+    H_channel = numerix.amax(y_coords.value) - numerix.amin(y_coords.value)  # 通道高度
+    D_h = 4.0 * (H_channel * L_channel) / (2.0 * (H_channel + L_channel))  # 水力直径
 
-    # 计算通道几何参数
-    x_coords = mesh.cellCenters[0].value
-    y_coords = mesh.cellCenters[1].value
-    L_channel = numerix.amax(x_coords) - numerix.amin(x_coords)
-    H_channel = numerix.amax(y_coords) - numerix.amin(y_coords)
+    # 计算摩擦系数 f
+    # 获取入口和出口面上的压力值
+    inlet_mask = x_coords.value < (numerix.amin(x_coords.value) + 1e-6)  # 入口边界条件
+    outlet_mask = x_coords.value > (numerix.amax(x_coords.value) - 1e-6)  # 出口边界条件
 
-    # 水力直径
-    D_h = 2 * H_channel
+    inlet_pressure_values = p.value[inlet_mask]
+    outlet_pressure_values = p.value[outlet_mask]
 
-    print("-" * 30)
-    print("几何参数 (用于 f 和 Nu):")
-    print(f"  通道长度 (L_channel): {L_channel:.4f} m")
-    print(f"  通道高度 (H_channel): {H_channel:.4f} m")
-    print(f"  水力直径 (D_h)   : {D_h:.4f} m")
-    print("-" * 30)
-
-    # 计算 Darcy 摩擦系数 (f)
-    # 计算入口和出口的面积加权平均压力
-    inletPressures = p.faceValue.value[inletFaceMask]
-    outletPressures = p.faceValue.value[outletFaceMask]
-
-    inletAreas = faceAreas[inletFaceMask]
-    outletAreas = faceAreas[outletFaceMask]
-
-    P_inlet_avg = numerix.sum(
-        inletPressures * inletAreas) / numerix.sum(inletAreas)
-    P_outlet_avg = numerix.sum(
-        outletPressures * outletAreas) / numerix.sum(outletAreas)
+    # 计算平均压力
+    P_inlet_avg = numerix.average(inlet_pressure_values) if len(inlet_pressure_values) > 0 else 0.0
+    P_outlet_avg = numerix.average(outlet_pressure_values) if len(outlet_pressure_values) > 0 else 0.0
 
     # 计算压降
     delta_P = P_inlet_avg - P_outlet_avg
 
-    # 计算 f (Darcy-Weisbach 定义)
-    darcy_f = (D_h * 2 * delta_P) / (L_channel * rho * U ** 2)
+    # 计算总体积流量
+    Q_total = 0.0
+    for face_vel in [Vx, Vy]:
+        face_areas = face_vel.mesh._faceAreas
+        face_normals = face_vel.mesh._orientedFaceNormals
+        face_velocities = face_vel.arithmeticFaceValue.value
+        # 只考虑入口处的流量
+        inlet_face_mask = face_vel.mesh.facesLeft.value
+        Q_total += numerix.sum(face_areas * face_normals[0] * face_velocities * inlet_face_mask)
 
-    print("摩擦系数 (f) 计算结果:")
-    print(f"  入口平均压力 (P_inlet_avg): {P_inlet_avg:.4e} Pa")
-    print(f"  出口平均压力 (P_outlet_avg): {P_outlet_avg:.4e} Pa")
-    print(f"  压降 (Delta_P)        : {delta_P:.4e} Pa")
-    print(f"  Darcy 摩擦系数 (f)    : {abs(darcy_f):.6f}")
-    print("-" * 30)
+    # 计算摩擦系数 (Darcy friction factor)
+    A_c = H_channel * 1.0  # 假设单位深度的横截面积
+    D_h = 2 * H_channel    # 对于二维平行板通道，水力直径为 2*H
+    V_avg = Q_total / A_c  # 平均速度
+    rho = 1.0              # 流体密度
 
-    # 计算 Nusselt 数 (Nu)
-    # 计算翼型表面的总传热量 Q_total
-    grad_T_face = T.grad.faceValue
-    gradT_dot_n = numerix.sum(grad_T_face.value * faceNormals, axis=0)
-    local_heat_flux = -k_fluid * gradT_dot_n
-    Q_per_face = local_heat_flux * faceAreas
-    Q_total = numerix.sum(Q_per_face[airfoil_mask])
+    # Darcy 摩擦系数计算
+    darcy_f = (2 * delta_P * D_h) / (L_channel * rho * V_avg**2) if V_avg != 0 else 0.0
 
-    # 计算翼型总湿面积 A_wetted
-    A_wetted = numerix.sum(faceAreas[airfoil_mask])
-
-    # 计算出口质量加权平均温度
-    T_outlet = T.faceValue.value[outletFaceMask]
-    Vf_outlet_vector = Vf.value[..., outletFaceMask]
-    normals_outlet = faceNormals[..., outletFaceMask]
-    areas_outlet = faceAreas[outletFaceMask]
-
-    v_dot_n_outlet = numerix.sum(Vf_outlet_vector * normals_outlet, axis=0)
-    mass_flow_rate_per_face = rho * v_dot_n_outlet * areas_outlet
-
-    T_weighted_numerator = numerix.sum(T_outlet * mass_flow_rate_per_face)
-    total_mass_flow_rate = numerix.sum(mass_flow_rate_per_face)
-
-    # 质量加权的出口平均温度
-    T_outlet_avg = T_weighted_numerator / total_mass_flow_rate
-
-    # 计算对数平均温差
-    delta_T_in = T_airfoil - T_inlet
-    delta_T_out = T_airfoil - T_outlet_avg
-
-    if abs(delta_T_out - delta_T_in) < 1e-6:
-        # 温差几乎不变
-        delta_T_lmtd = delta_T_in
-    elif delta_T_out <= 0 or (delta_T_out / delta_T_in) <= 0:
-        print("警告: LMTD 计算出现非正温差，可能由于出口温度等于或超过翼型温度。")
-        print(f"  DeltaT_in: {delta_T_in:.2f}, DeltaT_out: {delta_T_out:.2f}")
-        print("  将使用算术平均温差代替 LMTD。")
-        delta_T_lmtd = (delta_T_in + delta_T_out) / 2.0
-        if delta_T_lmtd <= 0:
-            delta_T_lmtd = delta_T_in
+    # 计算平均努塞尔数 Nu
+    # 获取固体壁面(翼型)上的温度和热通量
+    wetted_mask = T.mesh.physicalCells["airfoils"]  # 翼型表面单元
+    if wetted_mask is not None and numerix.sum(wetted_mask) > 0:
+        T_wall = T.value[wetted_mask]
+        # 计算总散热量
+        Q_total = numerix.sum(T.faceGrad.mag[..., wetted_mask].value * T.mesh._faceAreas[wetted_mask])
+        # 翼型总湿面积
+        A_wetted = numerix.sum(T.mesh._faceAreas[wetted_mask])
+        # 参考温度差
+        T_inlet = 293.15  # 入口温度
+        T_outlet_avg = numerix.average(T.value[outlet_mask]) if len(outlet_mask) > 0 else T_inlet
+        delta_T_lmtd = (T_outlet_avg - T_inlet) / numerix.log((T_outlet_avg + 1e-9) / (T_inlet + 1e-9))  # 对数平均温差
+        # 计算平均传热系数和努塞尔数
+        h_avg = Q_total / (A_wetted * delta_T_lmtd) if delta_T_lmtd != 0 else 0.0
+        Nu_avg = h_avg * D_h  # 使用水力直径作为特征长度
     else:
-        # 正常 LMTD 计算
-        delta_T_lmtd = (delta_T_out - delta_T_in) / \
-            numerix.log(delta_T_out / delta_T_in)
-
-    # 计算平均传热系数
-    if delta_T_lmtd == 0:
-        print("错误: 平均温差为零，无法计算 h_avg。")
+        Q_total = 0.0
+        A_wetted = 1.0
+        T_outlet_avg = 293.15
+        delta_T_lmtd = 1.0
         h_avg = 0.0
         Nu_avg = 0.0
-    else:
-        h_avg = abs(Q_total) / (A_wetted * abs(delta_T_lmtd))
-        L_characteristic = D_h
-        Nu_avg = (h_avg * L_characteristic) / k_fluid
 
-    print("努塞尔数 (Nu) 计算结果:")
-    print(f"  翼型总散热量 (Q_total) : {Q_total:.4e} W")
-    print(f"  翼型总湿面积 (A_wetted): {A_wetted:.4e} m^2")
-    print(f"  入口温度 (T_inlet)     : {T_inlet:.2f} K")
-    print(f"  出口平均温度 (T_outlet_avg): {T_outlet_avg:.2f} K")
-    print(f"  对数平均温差 (LMTD)  : {delta_T_lmtd:.2f} K")
-    print(f"  平均传热系数 (h_avg) : {h_avg:.4f} W/(m^2·K)")
-    print(f"  (使用特征长度 L_c = {L_characteristic:.4f} m)")
-    print(f"  平均努塞尔数 (Nu_avg)  : {Nu_avg:.4f}")
-    print("-" * 30)
-
-    return abs(darcy_f), Nu_avg, L_channel, H_channel, D_h, P_inlet_avg, P_outlet_avg, delta_P, Q_total, A_wetted, T_outlet_avg, delta_T_lmtd, h_avg
+    return darcy_f, Nu_avg, L_channel, H_channel, D_h, P_inlet_avg, P_outlet_avg, delta_P, Q_total, A_wetted, T_outlet_avg, delta_T_lmtd, h_avg
 
 
 def save_solution(mesh, Vx, Vy, p, T, Nu_avg, darcy_f):
@@ -341,219 +291,109 @@ def save_solution(mesh, Vx, Vy, p, T, Nu_avg, darcy_f):
 
 
 def extended_postprocessing(mesh, Vx, Vy, p, T, Nu_avg, darcy_f, L_channel, H_channel, D_h,
-                            P_inlet_avg, P_outlet_avg, delta_P, Q_total, A_wetted, T_outlet_avg,
-                            delta_T_lmtd, h_avg, T_inlet, T_airfoil, base_results_dir):
-    """扩展后处理功能"""
-    print("\n开始执行扩展后处理...")
+                            P_inlet_avg, P_outlet_avg, delta_P, Q_total, A_wetted, T_outlet_avg, delta_T_lmtd, h_avg):
+    """
+    扩展后处理: 生成更多可视化和数据输出
+    """
+    print("开始执行扩展后处理...")
 
-    # 计算速度模
-    V_mag = CellVariable(mesh=mesh, name="velocity magnitude")
-    V_mag.setValue(numerix.sqrt(Vx.value**2 + Vy.value**2))
-
-    # 计算涡量（z方向分量）
-    omega_z = CellVariable(mesh=mesh, name="vorticity (z)")
-    omega_z.setValue(Vy.grad[0].value - Vx.grad[1].value)
-
-    # 使用传入的目录而不是创建新的
-    results_dir = base_results_dir
-
-    # 1. 沿中心线的速度分布（y=0）
+    # 获取坐标
     x_coords = mesh.cellCenters[0]
     y_coords = mesh.cellCenters[1]
 
-    # 找到接近y=0的点
+    # 修复numerix函数调用
+    # 获取通道中心线上的数据 (y=0)
     center_line_indices = numerix.where(numerix.fabs(y_coords.value) < 0.5)[0]
     if len(center_line_indices) > 0:
+        # 提取中心线数据
         x_center = x_coords.value[center_line_indices]
-        Vx_center = Vx.value[center_line_indices]
-        Vy_center = Vy.value[center_line_indices]
-        Vmag_center = V_mag.value[center_line_indices]
         p_center = p.value[center_line_indices]
-        T_center = T.value[center_line_indices]
+        vx_center = Vx.value[center_line_indices]
 
         # 按x坐标排序
-        sorted_indices = numerix.argsort(x_center)
-        x_center = x_center[sorted_indices]
-        Vx_center = Vx_center[sorted_indices]
-        Vy_center = Vy_center[sorted_indices]
-        Vmag_center = Vmag_center[sorted_indices]
-        p_center = p_center[sorted_indices]
-        T_center = T_center[sorted_indices]
+        sort_indices = numerix.argsort(x_center)
+        x_center_sorted = x_center[sort_indices]
+        p_center_sorted = p_center[sort_indices]
+        vx_center_sorted = vx_center[sort_indices]
 
-        # 绘制速度分布
-        plt.figure(figsize=(15, 10))
+        # 保存中心线数据
+        centerline_data = np.column_stack((x_center_sorted, p_center_sorted, vx_center_sorted))
+        np.savetxt(os.path.join('solver_results', 'centerline_data.csv'), centerline_data,
+                   delimiter=',', header='x,pressure,velocity_x', comments='')
+        print("中心线数据已保存到 solver_results/centerline_data.csv")
+    else:
+        print("未找到中心线数据")
 
-        plt.subplot(2, 3, 1)
-        plt.plot(x_center, Vx_center, 'b-', label='Vx')
-        plt.xlabel('x')
-        plt.ylabel('Vx')
-        plt.title('Streamwise Velocity Profile Along Center Line')
-        plt.grid(True)
+    # 计算和保存入口/出口剖面数据
+    inlet_mask = x_coords.value < (numerix.amin(x_coords.value) + 1e-6)
+    outlet_mask = x_coords.value > (numerix.amax(x_coords.value) - 1e-6)
 
-        plt.subplot(2, 3, 2)
-        plt.plot(x_center, Vy_center, 'r-', label='Vy')
-        plt.xlabel('x')
-        plt.ylabel('Vy')
-        plt.title('Normal Velocity Profile Along Center Line')
-        plt.grid(True)
+    if numerix.sum(inlet_mask) > 0:
+        y_inlet = y_coords.value[inlet_mask]
+        vx_inlet = Vx.value[inlet_mask]
+        vy_inlet = Vy.value[inlet_mask]
+        T_inlet = T.value[inlet_mask]
 
-        plt.subplot(2, 3, 3)
-        plt.plot(x_center, Vmag_center, 'g-', label='|V|')
-        plt.xlabel('x')
-        plt.ylabel('|V|')
-        plt.title('Velocity Magnitude Profile Along Center Line')
-        plt.grid(True)
+        # 按y坐标排序
+        sort_indices = numerix.argsort(y_inlet)
+        y_inlet_sorted = y_inlet[sort_indices]
+        vx_inlet_sorted = vx_inlet[sort_indices]
+        vy_inlet_sorted = vy_inlet[sort_indices]
+        T_inlet_sorted = T_inlet[sort_indices]
 
-        plt.subplot(2, 3, 4)
-        plt.plot(x_center, p_center, 'k-', label='p')
-        plt.xlabel('x')
-        plt.ylabel('p')
-        plt.title('Pressure Profile Along Center Line')
-        plt.grid(True)
+        inlet_profile_data = np.column_stack((y_inlet_sorted, vx_inlet_sorted, vy_inlet_sorted, T_inlet_sorted))
+        np.savetxt(os.path.join('solver_results', 'inlet_profile.csv'), inlet_profile_data,
+                   delimiter=',', header='y,velocity_x,velocity_y,temperature', comments='')
+        print("入口剖面数据已保存到 solver_results/inlet_profile.csv")
 
-        plt.subplot(2, 3, 5)
-        plt.plot(x_center, T_center, 'm-', label='T')
-        plt.xlabel('x')
-        plt.ylabel('T (K)')
-        plt.title('Temperature Profile Along Center Line')
-        plt.grid(True)
+    if numerix.sum(outlet_mask) > 0:
+        y_outlet = y_coords.value[outlet_mask]
+        vx_outlet = Vx.value[outlet_mask]
+        vy_outlet = Vy.value[outlet_mask]
+        T_outlet = T.value[outlet_mask]
 
-        plt.tight_layout()
-        plt.savefig(os.path.join(results_dir, 'center_line_profiles.png'))
-        plt.close()
+        # 按y坐标排序
+        sort_indices = numerix.argsort(y_outlet)
+        y_outlet_sorted = y_outlet[sort_indices]
+        vx_outlet_sorted = vx_outlet[sort_indices]
+        vy_outlet_sorted = vy_outlet[sort_indices]
+        T_outlet_sorted = T_outlet[sort_indices]
 
-        # 保存数据为CSV
-        data = np.column_stack(
-            (x_center, Vx_center, Vy_center, Vmag_center, p_center, T_center))
-        np.savetxt(
-            os.path.join(results_dir, 'center_line_profiles.csv'),
-            data,
-            delimiter=',',
-            header='x,Vx,Vy,Vmag,pressure,temperature',
-            comments=''
-        )
+        outlet_profile_data = np.column_stack((y_outlet_sorted, vx_outlet_sorted, vy_outlet_sorted, T_outlet_sorted))
+        np.savetxt(os.path.join('solver_results', 'outlet_profile.csv'), outlet_profile_data,
+                   delimiter=',', header='y,velocity_x,velocity_y,temperature', comments='')
+        print("出口剖面数据已保存到 solver_results/outlet_profile.csv")
 
-    # 2. 生成带流线的云图
-    try:
-        # 绘制速度云图
-        plt.figure(figsize=(10, 8))
-        viewer = Viewer(vars=V_mag, title="Velocity Magnitude")
-        viewer.plot()
-        plt.savefig(os.path.join(results_dir, 'velocity_magnitude.png'))
-        plt.close()
+    # 生成全局性能总结
+    performance_summary = {
+        "Nu": float(Nu_avg),
+        "f": float(darcy_f),
+        "L_channel": float(L_channel),
+        "H_channel": float(H_channel),
+        "D_h": float(D_h),
+        "P_inlet_avg": float(P_inlet_avg),
+        "P_outlet_avg": float(P_outlet_avg),
+        "delta_P": float(delta_P),
+        "Q_total": float(Q_total),
+        "A_wetted": float(A_wetted),
+        "T_outlet_avg": float(T_outlet_avg),
+        "delta_T_lmtd": float(delta_T_lmtd),
+        "h_avg": float(h_avg)
+    }
 
-        # 绘制压力云图
-        plt.figure(figsize=(10, 8))
-        viewer = Viewer(vars=p, title="Pressure")
-        viewer.plot()
-        plt.savefig(os.path.join(results_dir, 'pressure.png'))
-        plt.close()
+    with open(os.path.join('solver_results', 'performance_summary.json'), 'w') as f:
+        json.dump(performance_summary, f, indent=4)
+    print("性能总结已保存到 solver_results/performance_summary.json")
 
-        # 绘制温度云图
-        plt.figure(figsize=(10, 8))
-        viewer = Viewer(vars=T, title="Temperature")
-        viewer.plot()
-        plt.savefig(os.path.join(results_dir, 'temperature.png'))
-        plt.close()
-
-        # 绘制涡量云图
-        plt.figure(figsize=(10, 8))
-        viewer = Viewer(vars=omega_z, title="Vorticity")
-        viewer.plot()
-        plt.savefig(os.path.join(results_dir, 'vorticity.png'))
-        plt.close()
-
-    except Exception as e:
-        print(f"绘制云图时出错: {e}")
-        print("跳过云图生成...")
-
-    # 3. 导出数据为CSV格式
-    # 获取网格点坐标
-    x_coords = mesh.cellCenters[0].value
-    y_coords = mesh.cellCenters[1].value
-
-    # 创建数据矩阵
-    data = np.column_stack(
-        (x_coords, y_coords, Vx.value, Vy.value, p.value, T.value))
-
-    # 保存为CSV
-    np.savetxt(
-        os.path.join(results_dir, "field_data.csv"),
-        data,
-        delimiter=",",
-        header="x,y,Vx,Vy,pressure,temperature",
-        comments=""
-    )
-
-    # 4. 生成总结报告
-    report_content = f"""
-CFD后处理总结报告
-==================
-
-计算域信息:
------------
-- 网格单元数: {mesh.numberOfCells}
-- 网格面数: {mesh.numberOfFaces}
-
-场变量统计:
-----------
-- 最大速度: {numerix.amax(V_mag.value):.4f}
-- 最小速度: {numerix.amin(V_mag.value):.4f}
-- 平均速度: {numerix.average(V_mag.value):.4f}
-
-- 最大压力: {numerix.amax(p.value):.4f}
-- 最小压力: {numerix.amin(p.value):.4f}
-- 平均压力: {numerix.average(p.value):.4f}
-
-- 最高温度: {numerix.amax(T.value):.2f} K
-- 最低温度: {numerix.amin(T.value):.2f} K
-- 平均温度: {numerix.average(T.value):.2f} K
-
-传热性能:
---------
-- 努塞尔数 (Nu): {Nu_avg:.6f}
-- 摩擦因子 (f): {darcy_f:.6f}
-- 目标参数 Nu/(f^(1/3)): {Nu_avg/(darcy_f**(1/3)):.6f} (如果f>0)
-
-几何参数:
---------
-- 通道长度 (L_channel): {L_channel:.4f} m
-- 通道高度 (H_channel): {H_channel:.4f} m
-- 水力直径 (D_h): {D_h:.4f} m
-
-流场性能:
---------
-- 入口平均压力 (P_inlet_avg): {P_inlet_avg:.4e} Pa
-- 出口平均压力 (P_outlet_avg): {P_outlet_avg:.4e} Pa
-- 压降 (Delta_P): {delta_P:.4e} Pa
-
-传热性能:
---------
-- 翼型总散热量 (Q_total): {Q_total:.4e} W
-- 翼型总湿面积 (A_wetted): {A_wetted:.4e} m^2
-- 入口温度 (T_inlet): {T_inlet:.2f} K
-- 出口平均温度 (T_outlet_avg): {T_outlet_avg:.2f} K
-- 对数平均温差 (LMTD): {delta_T_lmtd:.2f} K
-- 平均传热系数 (h_avg): {h_avg:.4f} W/(m^2·K)
-
-报告生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-"""
-
-    # 保存报告
-    with open(os.path.join(results_dir, "summary_report.txt"), "w", encoding="utf-8") as f:
-        f.write(report_content)
-
-    print(f"扩展后处理完成，结果已保存到: {results_dir}")
+    print("扩展后处理完成。")
 
 
 def visualize_results(mesh, p, Vx, Vy, T, sum_res_list, MaxSweep, sum_res, T_inlet, T_airfoil, results_dir):
     """可视化结果"""
     if 'sum_res' in locals() and (np.isnan(sum_res) or np.isinf(sum_res)):
         print("\n计算发散，无法生成结果图。")
-        if MaxSweep < 100:
-            print(" (这是调试运行，发散是正常的，请检查后处理代码是否报错)")
-        input("按回车键退出。")
-        exit()
+        # 移除了input()调用，避免程序等待用户输入
+        return
 
     # 收敛历史图
     print("\n正在生成收敛历史图...")
@@ -628,7 +468,7 @@ def main():
     # 求解参数
     V_limit = 1e2
     p_limit = 2e3
-    MaxSweep = 3  # 正式计算时使用300
+    MaxSweep = 300  # 正式计算时使用300
     # MaxSweep = 5  # 调试时使用5
     res_limit = 1e-4
     sum_res_list = []

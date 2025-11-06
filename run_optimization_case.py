@@ -65,6 +65,7 @@ def run_mesh_generator():
         return False
     except FileNotFoundError:
         print("未找到网格生成器脚本")
+        
         return False
 
 def run_solver():
@@ -107,6 +108,7 @@ def main():
     parser.add_argument('--Ta', type=float, default=0.0, help='Ta 参数 (弯度系数，默认为0.0)')
     parser.add_argument('--Twa', type=float, default=0.5, help='Twa 参数 (宽长比，默认为0.5)')
     parser.add_argument('--output', type=str, default=os.path.join('csv_data', 'result.csv'), help='结果输出文件')
+    parser.add_argument('--case_id', type=float, default=0, help='案例ID')
     
     args = parser.parse_args()
     
@@ -145,8 +147,8 @@ def main():
         os.makedirs(output_dir)
     
     # 写入结果文件
-    with open(args.output, 'a') as f:
-        f.write(f"{args.Tt},{args.Ts},{args.Ta},{args.Tad},{args.Twa},{args.Tb},{Nu},{f},{target_param}\n")
+    with open(args.output, 'w') as output_file:  # 使用output_file而不是f作为文件对象变量名
+        output_file.write(f"{args.case_id},{args.Tt},{args.Ts},{args.Ta},{args.Tad},{args.Twa},{args.Tb},{Nu},{f},{target_param}\n")
     
     print(f"结果已写入: {args.output}")
     return 0

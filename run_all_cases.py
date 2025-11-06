@@ -28,6 +28,7 @@ def run_single_case(case_id, Tt, Ts, Ta, Tad, Twa, Tb):
         str(Tt), str(Ts), str(Tad), str(Tb),
         "--Ta", str(Ta),
         "--Twa", str(Twa),
+        "--case_id", str(case_id),
         "--output", "csv_data/temp_result.csv"
     ]
     
@@ -41,18 +42,26 @@ def run_single_case(case_id, Tt, Ts, Ta, Tad, Twa, Tb):
             with open("csv_data/temp_result.csv", "r") as f:
                 result_line = f.read().strip()
             os.remove("csv_data/temp_result.csv")  # 清理临时文件
-            return result_line
+            return result_line + ",success"
         else:
             print(f"案例 {case_id} 没有产生结果")
-            return f"{case_id},{Tt},{Ts},{Ta},{Tad},{Twa},{Tb},0,0,0"
+            return f"{case_id},{Tt},{Ts},{Ta},{Tad},{Twa},{Tb},0,0,0,no_result"
             
     except subprocess.CalledProcessError as e:
         print(f"案例 {case_id} 执行失败: {e}")
         print(f"错误输出: {e.stderr}")
-        return f"{case_id},{Tt},{Ts},{Ta},{Tad},{Twa},{Tb},0,0,0"
+        print(f"标准输出: {e.stdout}")
+        failure_reason = "execution_error"
+        if "网格生成器执行失败" in e.stderr:
+            failure_reason = "mesh_generation_failed"
+        elif "naca0012dat.py执行失败" in e.stderr:
+            failure_reason = "geometry_generation_failed"
+        elif "求解器执行失败" in e.stderr:
+            failure_reason = "solver_failed"
+        return f"{case_id},{Tt},{Ts},{Ta},{Tad},{Twa},{Tb},0,0,0,{failure_reason}"
     except subprocess.TimeoutExpired:
         print(f"案例 {case_id} 执行超时")
-        return f"{case_id},{Tt},{Ts},{Ta},{Tad},{Twa},{Tb},0,0,0"
+        return f"{case_id},{Tt},{Ts},{Ta},{Tad},{Twa},{Tb},0,0,0,timeout"
 
 def main():
     # 检查参数采样文件是否存在
@@ -69,7 +78,7 @@ def main():
     
     # 准备结果文件
     result_file = os.path.join("csv_data", "final_results.csv")
-    result_header = "case_id,Tt,Ts,Ta,Tad,Twa,Tb,Nu,f,target_param\n"
+    result_header = "case_id,Tt,Ts,Ta,Tad,Twa,Tb,Nu,f,target_param,failure_reason\n"
     
     # 写入头部
     with open(result_file, 'w') as f:
