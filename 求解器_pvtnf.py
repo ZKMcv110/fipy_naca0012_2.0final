@@ -35,7 +35,7 @@ def load_mesh():
     if not os.path.exists(msh_filename):
         print("-" * 50)
         print(f"\n错误: 未找到网格文件 '{msh_filename}'。")
-        print("\n请先运行 'generate_mesh.py' 脚本来自动生成网格,")
+        print("\n请先运行 '网格生成器2_三角形.py' 脚本来自动生成网格,")
         print("然后再重新运行此脚本。")
         print("-" * 50)
         exit()
@@ -340,6 +340,41 @@ def save_solution(mesh, Vx, Vy, p, T, Nu_avg, darcy_f):
     print("求解结果已保存到 solver_results/latest_solution.pkl")
 
 
+def save_field_images(Vx, Vy, p, T, results_dir):
+    """保存场变量图像用于CNN训练"""
+    # 创建场图像目录
+    field_image_dir = os.path.join(results_dir, 'field_images')
+    if not os.path.exists(field_image_dir):
+        os.makedirs(field_image_dir)
+    
+    # 生成速度场图像（速度大小）
+    V_mag = np.sqrt(Vx.value**2 + Vy.value**2)
+    plt.figure(figsize=(10, 8))
+    plt.imshow(V_mag.reshape(Vx.mesh.nx, Vx.mesh.ny), origin='lower', cmap='viridis')
+    plt.colorbar(label='Velocity Magnitude')
+    plt.title('Velocity Field')
+    plt.savefig(os.path.join(field_image_dir, 'velocity_field.png'))
+    plt.close()
+    
+    # 生成压力场图像
+    plt.figure(figsize=(10, 8))
+    plt.imshow(p.value.reshape(p.mesh.nx, p.mesh.ny), origin='lower', cmap='plasma')
+    plt.colorbar(label='Pressure')
+    plt.title('Pressure Field')
+    plt.savefig(os.path.join(field_image_dir, 'pressure_field.png'))
+    plt.close()
+    
+    # 生成温度场图像
+    plt.figure(figsize=(10, 8))
+    plt.imshow(T.value.reshape(T.mesh.nx, T.mesh.ny), origin='lower', cmap='hot')
+    plt.colorbar(label='Temperature (K)')
+    plt.title('Temperature Field')
+    plt.savefig(os.path.join(field_image_dir, 'temperature_field.png'))
+    plt.close()
+    
+    print(f"场变量图像已保存到 {field_image_dir}")
+
+
 def extended_postprocessing(mesh, Vx, Vy, p, T, Nu_avg, darcy_f, L_channel, H_channel, D_h,
                             P_inlet_avg, P_outlet_avg, delta_P, Q_total, A_wetted, T_outlet_avg,
                             delta_T_lmtd, h_avg, T_inlet, T_airfoil, base_results_dir):
@@ -628,7 +663,7 @@ def main():
     # 求解参数
     V_limit = 1e2
     p_limit = 2e3
-    MaxSweep = 3  # 正式计算时使用300
+    MaxSweep = 100 # 正式计算时使用300
     # MaxSweep = 5  # 调试时使用5
     res_limit = 1e-4
     sum_res_list = []

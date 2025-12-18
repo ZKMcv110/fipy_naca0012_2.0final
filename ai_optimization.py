@@ -36,28 +36,28 @@ class ParameterToPerformanceNet(nn.Module):
 
 def load_models():
     """加载训练好的模型和标准化器"""
-    if not os.path.exists('model_Nu.pth') or not os.path.exists('model_f.pth'):
+    # 检查模型文件所在目录
+    model_dir = "ai_model_results"
+    model_Nu_path = os.path.join(model_dir, 'model_Nu.pth')
+    model_f_path = os.path.join(model_dir, 'model_f.pth')
+    
+    if not os.path.exists(model_Nu_path) or not os.path.exists(model_f_path):
         print("错误: 找不到训练好的模型文件")
         print("请先运行 train_ai_models.py 训练模型")
         return None, None, None, None, None
     
-    # 加载标准化器
-    with open('scaler_X.pkl', 'rb') as f:
-        scaler_X = pickle.load(f)
-    
-    with open('scaler_Nu.pkl', 'rb') as f:
-        scaler_Nu = pickle.load(f)
-    
-    with open('scaler_f.pkl', 'rb') as f:
-        scaler_f = pickle.load(f)
+    # 加载标准化器 (使用torch.load并设置weights_only=False)
+    scaler_X = torch.load(os.path.join(model_dir, 'scaler_X.pkl'), weights_only=False)
+    scaler_Nu = torch.load(os.path.join(model_dir, 'scaler_Nu.pkl'), weights_only=False)
+    scaler_f = torch.load(os.path.join(model_dir, 'scaler_f.pkl'), weights_only=False)
     
     # 创建模型
     model_Nu = ParameterToPerformanceNet(input_size=4, hidden_size=64, output_size=1)
     model_f = ParameterToPerformanceNet(input_size=4, hidden_size=64, output_size=1)
     
     # 加载模型权重
-    model_Nu.load_state_dict(torch.load('model_Nu.pth'))
-    model_f.load_state_dict(torch.load('model_f.pth'))
+    model_Nu.load_state_dict(torch.load(model_Nu_path, weights_only=True))
+    model_f.load_state_dict(torch.load(model_f_path, weights_only=True))
     
     # 设置为评估模式
     model_Nu.eval()
@@ -137,14 +137,18 @@ def main():
     print(f"最优目标值 Nu/(f^(1/3)): {-result.fun:.6f}")
     
     # 保存最优参数
-    with open(os.path.join('csv_data', 'optimal_parameters.txt'), 'w') as f:
+    # 确保ai_model_results目录存在
+    if not os.path.exists('ai_model_results'):
+        os.makedirs('ai_model_results')
+        
+    with open(os.path.join('ai_model_results', 'optimal_parameters.txt'), 'w') as f:
         f.write(f"Tt: {result.x[0]:.6f}\n")
         f.write(f"Ts: {result.x[1]:.6f}\n")
         f.write(f"Tad: {result.x[2]:.6f}\n")
         f.write(f"Tb: {result.x[3]:.6f}\n")
         f.write(f"Target value Nu/(f^(1/3)): {-result.fun:.6f}\n")
     
-    print("\n最优参数已保存到: csv_data/optimal_parameters.txt")
+    print("\n最优参数已保存到: ai_model_results/optimal_parameters.txt")
     
     # 使用AI模型预测最优参数的Nu和f值
     params_scaled = scaler_X.transform([result.x])

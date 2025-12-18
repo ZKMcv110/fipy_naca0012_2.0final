@@ -1,146 +1,92 @@
-# NACA0012翼型扰流柱优化项目
+# NACA0012翼型阵列CFD仿真与优化项目
 
-本项目旨在通过计算流体力学(CFD)和人工智能(AI)技术，寻找最优的扰流柱结构参数，以最大化换热效率与流动阻力的比值(Nu/(f^(1/3)))。
-
-## 项目概述
-
-本项目基于FiPy（一个用Python编写的偏微分方程求解器）开发，用于模拟NACA0012翼型周围的流体流动和传热过程。通过结合AI优化算法，自动寻找最优的扰流柱几何参数。
+本项目基于FiPy实现了NACA0012翼型阵列的CFD仿真和参数优化。项目包括几何生成、网格划分、CFD求解、结果后处理和AI优化等模块。
 
 ## 项目结构
 
 ```
 fipy_naca0012_2.0/
-├── 网格生成器2_三角形.py      # 网格生成脚本
-├── 求解器2.py               # 基础CFD求解器
-├── 求解器_pvtnf.py          # 带传热计算的CFD求解器
-├── compute_Nu_f.py          # Nu和f参数计算脚本
-├── post_processing.py       # 基础后处理脚本
-├── enhanced_post_processing.py # 增强后处理脚本
-├── run_optimization_case.py # 单个优化案例运行脚本
-├── run_all_cases.py         # 批量运行所有案例脚本
-├── generate_samples.py      # 生成参数采样点脚本
-├── train_ai_models.py       # 训练AI模型脚本
-├── ai_optimization.py       # AI优化脚本
-├── requirements.txt         # 项目依赖包列表
-├── README.md               # 项目说明书
-├── airfoil_array_SYMMETRIC.dat  # 翼型坐标数据文件
-├── airfoil_array.msh2       # 网格文件
-├── gmsh.exe                 # 网格生成工具
-├── gmsh-4.13.dll            # 网格生成工具依赖库
-├── csv_data/                # CSV数据文件目录
-├── results/                 # 结果文件目录
-└── myenvs_fipynaca2.0/      # Python虚拟环境目录
+├── naca0012dat.py              # 翼型几何生成脚本
+├── 网格生成器2_三角形.py        # 网格生成脚本
+├── 求解器_pvtnf.py             # CFD求解器
+├── generate_samples.py         # 参数采样生成脚本
+├── run_all_cases.py            # 批量运行所有案例
+├── train_ai_models.py          # 训练AI代理模型
+├── ai_optimization.py          # 使用AI进行参数优化
+├── cnn_performance_predictor.py # 基于CNN的性能预测模型
+├── predict_performance_with_cnn.py # 使用CNN进行性能预测
+├── csv_data/                   # CSV数据文件目录
+├── results/                    # 仿真结果目录
+├── solver_results/             # 求解器结果目录
+├── ai_model_results/           # AI模型结果目录
+└── ai_cnn_model_results/       # CNN模型结果目录
 ```
 
-## 安装与配置
+## 功能模块
 
-### 创建虚拟环境
+### 1. 几何生成
+使用 `naca0012dat.py` 生成NACA0012翼型阵列的几何数据文件。
 
-```bash
-python -m venv myenvs_fipynaca2.0
-myenvs_fipynaca2.0\Scripts\activate
-```
+### 2. 网格生成
+使用 `网格生成器2_三角形.py` 基于几何数据生成CFD计算网格。
 
-### 安装依赖包
+### 3. CFD求解
+使用 `求解器_pvtnf.py` 求解Navier-Stokes方程和能量方程。
 
-```bash
-pip install -r requirements.txt
-```
+### 4. 参数采样
+使用 `generate_samples.py` 生成参数组合用于批量仿真。
+
+### 5. 批量运行
+使用 `run_all_cases.py` 批量运行所有参数组合的仿真。
+
+### 6. AI代理模型
+使用 `train_ai_models.py` 和 `ai_optimization.py` 训练和使用AI模型进行优化。
+
+### 7. CNN性能预测
+使用 `cnn_performance_predictor.py` 和 `predict_performance_with_cnn.py` 实现基于CNN的性能参数预测。
 
 ## 使用流程
 
-### 阶段一：工具准备
+### 基本CFD仿真流程
+1. 生成参数样本: `python generate_samples.py`
+2. 批量运行案例: `python run_all_cases.py`
+3. 训练AI模型: `python train_ai_models.py`
+4. 进行优化: `python ai_optimization.py`
 
-1. **几何生成**：使用C++程序根据输入参数生成翼型坐标文件
-2. **网格生成**：运行`网格生成器2_三角形.py`生成计算网格
-3. **CFD求解**：运行`求解器_pvtnf.py`或`compute_Nu_f.py`进行流场和温度场计算
-
-### 阶段二：数据生产
-
-1. **生成采样点**：
-   ```bash
-   python generate_samples.py
-   ```
-
-2. **批量运行案例**：
-   ```bash
-   python run_all_cases.py
-   ```
-
-### 阶段三：AI训练
-
-```bash
-python train_ai_models.py
-```
-
-### 阶段四：智能寻优
-
-```bash
-python ai_optimization.py
-```
-
-### 阶段五：最终验证
-
-使用AI找到的最优参数运行一次完整的CFD仿真进行验证。
-
-## 脚本详细说明
-
-### 网格生成器2_三角形.py
-
-根据翼型坐标数据文件生成FiPy兼容的网格文件。
-
-### 求解器系列脚本
-
-- `求解器2.py`：基础CFD求解器，计算流场
-- `求解器_pvtnf.py`：扩展求解器，同时计算流场和温度场
-- `compute_Nu_f.py`：专门用于计算Nu和f参数的简化求解器
-
-### 后处理脚本
-
-- `post_processing.py`：基础后处理脚本，提供额外的工程信息提取
-- `enhanced_post_processing.py`：增强后处理脚本，包含更详细的分析功能
-
-后处理功能包括：
-- 气动系数计算（阻力、升力系数）
-- 传热分析（努塞尔数分布）
-- 涡量场计算
-- 边界层分析
-- 压力系数分布
-- 流动分离点检测
-- 综合性报告生成
-
-### 优化相关脚本
-
-- `generate_samples.py`：使用拉丁超立方采样生成参数组合
-- `run_optimization_case.py`：运行单个优化案例
-- `run_all_cases.py`：批量运行所有案例
-- `train_ai_models.py`：训练Nu和f预测模型
-- `ai_optimization.py`：使用AI模型进行参数优化
+### CNN性能预测流程
+1. 运行CFD仿真生成场变量图像（求解器会自动输出图像）
+   - 速度场图像: `velocity_field.png`
+   - 压力场图像: `pressure_field.png`
+   - 温度场图像: `temperature_field.png`
+2. 训练CNN模型: `python cnn_performance_predictor.py`
+3. 使用CNN进行预测: `python predict_performance_with_cnn.py`
 
 ## 参数说明
 
-优化过程中涉及的主要参数：
+项目中涉及6个几何参数：
+- Tt: 横向间距系数
+- Ts: 纵向间距系数
+- Ta: 弯度系数（固定为0）
+- Tad: 交错间距系数
+- Twa: 宽长比（不参与计算）
+- Tb: 厚度系数
 
-- **Tt**：扰流柱顶部厚度参数
-- **Ts**：扰流柱侧面厚度参数
-- **Tad**：扰流柱前缘角度参数
-- **Tb**：扰流柱后缘角度参数
+## 输出文件
 
-## 输出结果
+- `csv_data/final_results.csv`: 包含所有案例的参数和性能结果
+- `results/`: 包含详细的CFD仿真结果，包括场变量图像
+- `ai_model_results/`: 包含AI代理模型和相关文件
+- `ai_cnn_model_results/`: 包含CNN模型和相关文件
 
-- **Nu**：努塞尔数，表征换热效率
-- **f**：摩擦因子，表征流动阻力
-- **Nu/(f^(1/3))**：目标参数，换热效率与流动阻力的比值
+## 依赖库
 
-## 注意事项
+- FiPy: CFD求解器
+- Gmsh: 网格生成
+- PyTorch: AI模型训练
+- Scikit-learn: 数据预处理
+- NumPy, Pandas: 数据处理
+- Matplotlib: 结果可视化
 
-1. 确保C++几何生成程序正确配置并可被调用
-2. 网格生成需要Gmsh工具支持
-3. 大量CFD计算可能需要较长时间
-4. AI模型训练需要足够的数据点以保证准确性
+## 许可证
 
-## 故障排除
-
-- 如果遇到依赖包安装问题，请检查Python版本兼容性
-- 如果CFD求解发散，请检查网格质量和边界条件设置
-- 如果AI优化结果不理想，请检查训练数据质量和模型参数
+本项目采用MIT许可证。

@@ -111,7 +111,7 @@ def main():
     gmsh.write(msh_filename)
     gmsh.finalize()
     print(f"网格文件 '{msh_filename}' 生成成功。")
-    print("\n现在您可以运行 'run_solver.py' 来进行物理模拟了。")
+    print("\n现在您可以运行 '求解器_pvtnf.py' 来进行物理模拟了。")
 
 
 if __name__ == '__main__':

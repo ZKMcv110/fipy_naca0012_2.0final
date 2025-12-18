@@ -121,6 +121,11 @@ def main():
     if X_scaled is None:
         return 1
     
+    # 创建输出目录
+    output_dir = "ai_model_results"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
     # 转换为PyTorch张量
     X_tensor = torch.FloatTensor(X_scaled)
     y_Nu_tensor = torch.FloatTensor(y_Nu_scaled)
@@ -148,15 +153,15 @@ def main():
         model_f, X_train, y_f_train, X_val, y_f_val, epochs=1000, lr=0.001
     )
     
-    # 保存模型和标准化器
+    # 保存模型和标准化器到指定目录
     print("\n保存模型和标准化器...")
-    torch.save(model_Nu.state_dict(), 'model_Nu.pth')
-    torch.save(model_f.state_dict(), 'model_f.pth')
-    torch.save(scaler_X, 'scaler_X.pkl')
-    torch.save(scaler_Nu, 'scaler_Nu.pkl')
-    torch.save(scaler_f, 'scaler_f.pkl')
+    torch.save(model_Nu.state_dict(), os.path.join(output_dir, 'model_Nu.pth'))
+    torch.save(model_f.state_dict(), os.path.join(output_dir, 'model_f.pth'))
+    torch.save(scaler_X, os.path.join(output_dir, 'scaler_X.pkl'))
+    torch.save(scaler_Nu, os.path.join(output_dir, 'scaler_Nu.pkl'))
+    torch.save(scaler_f, os.path.join(output_dir, 'scaler_f.pkl'))
     
-    # 绘制训练曲线
+    # 绘制训练曲线并保存到指定目录
     plt.figure(figsize=(12, 5))
     
     plt.subplot(1, 2, 1)
@@ -178,13 +183,14 @@ def main():
     plt.grid(True)
     
     plt.tight_layout()
-    plt.savefig('training_curves.png')
+    plt.savefig(os.path.join(output_dir, 'training_curves.png'))
     plt.close()
     
-    print("模型训练完成!")
-    print("模型已保存: model_Nu.pth, model_f.pth")
-    print("标准化器已保存: scaler_X.pkl, scaler_Nu.pkl, scaler_f.pkl")
-    print("训练曲线已保存: training_curves.png")
+    print(f"模型训练完成!")
+    print(f"所有结果已保存到 '{output_dir}' 文件夹下:")
+    print("  模型文件: model_Nu.pth, model_f.pth")
+    print("  标准化器文件: scaler_X.pkl, scaler_Nu.pkl, scaler_f.pkl")
+    print("  训练曲线: training_curves.png")
     
     return 0
 
